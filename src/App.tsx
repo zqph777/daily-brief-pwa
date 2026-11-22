@@ -1,13 +1,16 @@
-import { useEffect, useId, useLayoutEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { BrowserRouter, HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { configurePrivateAccess, IS_IOS_BUILD, IS_MOCK, IS_PRIVATE_BUILD, latestBrief, loadBrief, loadHistory, pruneCache, readBrief, readHistory, SECTIONS, type Brief, type NewsImage, type NewsItem, type SectionId } from './data';
+import { configurePrivateAccess, IS_IOS_BUILD, IS_MOCK, IS_PRIVATE_BUILD, latestBrief, loadBrief, loadHistory, pruneCache, readBrief, readHistory, SECTIONS, type Brief, type NewsImage, type SectionId } from './data';
 import { dateLabel, inRetention, isDateKey, publishedLabel, RETENTION_DAYS, shiftDate, todayKey, updateLabel } from './dates';
+import { favoriteKey, useFavorites, type Favorite } from './favorites';
 import { Icon } from './icons';
+import { NewsArt } from './newsArt';
 import { MAX_SCORE, newsRating, RATING_AXES } from './rating';
 import { useResource } from './useResource';
 import { version } from '../package.json';
 
 const editionName = '一日之计';
+const FavoritesContext = createContext<ReturnType<typeof useFavorites> | null>(null);
 
 const jumpToTop = () => window.scrollTo(0, 0);
 
@@ -38,7 +41,7 @@ function Header({ date, title, back, other = 'about' }: { date?: string; title?:
       {otherLink}
   </div> : <div className="shell topbar-content">
       <div className="wordmark"><strong>{editionName}</strong>{date && <time dateTime={date}>{dateLabel(date)}</time>}</div>
-      <nav className="topbar-nav" aria-label="主导航"><Link className="nav-link" to="/history" state={{ from }}>历史</Link>{otherLink}</nav>
+      <nav className="topbar-nav" aria-label="报纸工具"><Link className="nav-link" to="/history" state={{ from }}>历史</Link>{otherLink}</nav>
     </div>}
   </header>;
 }
@@ -60,10 +63,10 @@ function SectionTabs({ section, select }: { section: SectionId; select: (section
   )}</div>;
 }
 
-function NewsGallery({ images }: { images: NewsImage[] }) {
+function NewsGallery({ images, fallback }: { images: NewsImage[]; fallback: ReactNode }) {
   const [failed, setFailed] = useState<string[]>([]);
   const visible = images.filter(({ url }) => !failed.includes(url));
-  if (!visible.length) return null;
+  if (!visible.length) return fallback;
   return <div className="news-gallery">
     {IS_MOCK && <p className="gallery-label">本报插图</p>}
     <div className={`gallery-grid${visible.length === 1 ? ' single-image' : ''}${IS_MOCK ? ' demo-illustrations' : ''}`}>
@@ -75,12 +78,16 @@ function NewsGallery({ images }: { images: NewsImage[] }) {
   </div>;
 }
 
-function NewsCard({ item, now, zone, index }: { item: NewsItem; now: number; zone: string; index: number }) {
+function NewsCard({ entry, now, index, collection = false }: { entry: Favorite; now: number; index: number; collection?: boolean }) {
+  const { item, zone, date, section } = entry;
+  const favorites = useContext(FavoritesContext);
+  const saved = favorites?.keys.has(favoriteKey(entry)) ?? false;
   const rating = newsRating(item.editorial_score, item.importance);
   const [ratingOpen, setRatingOpen] = useState(false);
   const ratingId = useId();
   const scoreLabel = rating?.kind === 'importance' ? '重要性' : '信息评分';
   return <article className="news">
+    {collection && <p className="favorite-dateline"><time dateTime={date}>{dateLabel(date, true)}</time><span>{section === 'ai' ? 'AI' : '世界'}</span></p>}
     <div className="news-heading"><span className="story-number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><h2 className="news-title">{item.title}</h2>
       {rating ? <button className="rating-stamp" type="button" aria-expanded={ratingOpen} aria-controls={ratingId}
         aria-label={`${scoreLabel} ${rating.value.toFixed(1)} 分，满分 ${MAX_SCORE.toFixed(1)} 分`} onClick={() => setRatingOpen((open) => !open)}>
@@ -97,14 +104,16 @@ function NewsCard({ item, now, zone, index }: { item: NewsItem; now: number; zon
         {rating.capped && <p>核心证据不足，总分上限为 2.0。</p>}
       </> : <p>该简报仅提供 1–5 级重要性，尚无五项评分明细。重要性不代表事实可信度。</p>}
     </div>}
-    {item.what_happened && <NewsCopy title="发生了什么" text={item.what_happened} limit={150} />}
-    {item.possible_impact && <NewsCopy title="可能的影响" text={item.possible_impact} limit={100} />}
+    <NewsGallery images={item.images ?? []} fallback={<NewsArt item={item} section={section} />} />
+    {item.what_happened && <NewsCopy title="发生了什么" text={item.what_happened} limit={collection ? undefined : 150} />}
+    {item.possible_impact && <NewsCopy title="可能的影响" text={item.possible_impact} limit={collection ? undefined : 100} />}
     {item.uncertainty_note && <div className="uncertainty"><span className="badge"><Icon name="warning" size={13} />尚未证实</span><p>{item.uncertainty_note}</p></div>}
-    {!!item.images?.length && <NewsGallery images={item.images} />}
     <div className="news-meta">{item.source_name}{item.published_at && <> <span aria-hidden="true">·</span> <time dateTime={item.published_at}>{publishedLabel(item.published_at, zone, now)}</time></>}</div>
-    {item.source_url ? <a className="article-link" href={item.source_url} target="_blank" rel="noopener noreferrer"
+    <div className="news-actions">{item.source_url ? <a className="article-link" href={item.source_url} target="_blank" rel="noopener noreferrer"
       aria-label={`阅读原文（新标签页）：${item.title}`}>阅读原文<Icon name="external" /></a> :
-      <button type="button" className="article-link is-disabled" disabled><span>阅读原文</span><span>原文链接不可用</span></button>}
+      <button type="button" className="article-link is-disabled" disabled><span>原文链接不可用</span></button>}
+    {favorites && <button type="button" className="favorite-button" aria-pressed={saved} aria-label={`收藏：${item.title}`}
+      onClick={() => favorites.toggle(entry)}><Icon name="bookmark" size={19} />{saved ? '已收藏' : '收藏'}</button>}</div>
     {!!item.supporting_sources?.length && <details className="news-meta"><summary>佐证来源</summary><ul>
       {item.supporting_sources.map((source) => <li key={source.source_url}><a href={source.source_url} target="_blank" rel="noopener noreferrer">{source.source_name}</a>
         {source.published_at && <> <span aria-hidden="true">·</span> <time dateTime={source.published_at}>{publishedLabel(source.published_at, zone, now)}</time></>}</li>)}
@@ -125,9 +134,9 @@ function EditionCover({ date, title }: { date: string; title: string }) {
   </div>;
 }
 
-function NewsCopy({ title, text, limit }: { title: string; text: string; limit: number }) {
+function NewsCopy({ title, text, limit }: { title: string; text: string; limit?: number }) {
   const characters = Array.from(text);
-  const excerpt = characters.length > limit ? `${characters.slice(0, limit - 1).join('').trimEnd()}…` : text;
+  const excerpt = limit && characters.length > limit ? `${characters.slice(0, limit - 1).join('').trimEnd()}…` : text;
   const [first, ...rest] = excerpt.split(/\n\s*\n/u);
   return <div className="news-copy"><h3>{title}</h3><p>{first}</p>{rest.length > 0 && <p>{rest.join('\n')}</p>}</div>;
 }
@@ -191,7 +200,7 @@ function BriefScreen({ date, home, now, back }: { date: string; home: boolean; n
     return <div className="news-list">
       {incomplete && <div className="banner warn" role="status">部分来源未能采集或核验。</div>}
       <div className="section-caption"><span>{sectionId === 'ai' ? '人工智能与科技' : '国际与经济'}</span><span className="section-count">本期 {items.length} 条</span></div>
-      {items.map((item, index) => <NewsCard key={`${item.id}-${index}`} item={item} index={index} now={now} zone={state.value.timezone} />)}
+      {items.map((item, index) => <NewsCard key={`${item.id}-${index}`} entry={{ item, section: sectionId, date: state.value.date, zone: state.value.timezone }} index={index} now={now} />)}
     </div>;
   }
 
@@ -260,6 +269,28 @@ function safariInstall() {
     !(navigator as Navigator & { standalone?: boolean }).standalone && !matchMedia('(display-mode: standalone)').matches;
 }
 
+function FavoritesScreen({ now }: { now: number }) {
+  const favorites = useContext(FavoritesContext);
+  const entries = favorites?.entries ?? [];
+  useEffect(() => { document.title = `收藏 · ${editionName}`; }, []);
+  return <><Header back="/" title="收藏" /><main id="main" className="shell main scene">
+    <div className="page-intro"><h1>收藏</h1><p>仅保存在当前浏览器，不随简报过期删除。</p></div>
+    {entries.length ? <div className="news-list" aria-label="已收藏的新闻">
+      <div className="section-caption"><span>已保存</span><span className="section-count">{entries.length} 条</span></div>
+      {entries.map((entry, index) => <NewsCard key={favoriteKey(entry)} entry={entry} index={index} now={now} collection />)}
+    </div> : <Notice title="还没有收藏" description="看到想留着的新闻，点新闻旁的「收藏」。"><Link className="action" to="/">去看新闻</Link></Notice>}
+  </main></>;
+}
+
+function BottomNav({ collecting }: { collecting: boolean }) {
+  return <nav className="bottom-nav" aria-label="主导航">
+    <div className="shell bottom-nav-inner">
+      <Link to="/" className="bottom-nav-link" aria-current={!collecting ? 'page' : undefined}><Icon name="page" size={20} />新闻</Link>
+      <Link to="/favorites/" className="bottom-nav-link" aria-current={collecting ? 'page' : undefined}><Icon name="bookmark" size={20} />收藏</Link>
+    </div>
+  </nav>;
+}
+
 function About() {
   const location = useLocation();
   const from = location.state?.from;
@@ -272,7 +303,7 @@ function About() {
       <h2>覆盖时间范围</h2><p>前一天 08:00 至当天 08:00（北京时间）。</p>
       {latest && <p className="secondary">{latest.coverage_start && latest.coverage_end ? `最近简报：${updateLabel(latest.coverage_start, latest.timezone)} 至 ${updateLabel(latest.coverage_end, latest.timezone)}` : '最近简报的时间范围未知。'}</p>}</section>
     <section className="about-group"><h2>信息来源</h2><p>新闻由多个来源汇总、去重并精选，每条新闻注明来源。原文链接可用时，可直接打开核对。</p></section>
-    <section className="about-group"><h2>使用条款与隐私</h2><details><summary>查看使用与隐私说明</summary><p>这是一份个人用的每日新闻简报，不提供推送设置，不内置分析或追踪脚本。</p><p>{IS_PRIVATE_BUILD ? '正式简报仅限获授权的账号在线阅读，不会保存为本机离线缓存。' : '为支持离线阅读，浏览器在本机保存读过的简报和历史日期。你可以清除站点数据删除缓存。'}打开原文后，由来源站点适用其自己的使用和隐私政策。</p><p>简报为阅读参考，请以原文为准。</p></details></section>
+    <section className="about-group"><h2>使用条款与隐私</h2><details><summary>查看使用与隐私说明</summary><p>这是一份个人用的每日新闻简报，不提供推送设置，不内置分析或追踪脚本。</p><p>{IS_PRIVATE_BUILD ? '正式简报仅限获授权的账号在线阅读，不会保存为本机离线缓存。' : '简报和收藏保存在当前浏览器。收藏不受七天保留限制，也不上传或跨设备同步；清除站点数据会移除收藏。'}打开原文后，由来源站点适用其自己的使用和隐私政策。</p><p>简报为阅读参考，请以原文为准。</p></details></section>
     <section className="about-group"><p>只展示真正重要的新闻，适合在清晨快速读完。</p>{IS_MOCK && <p className="secondary">当前使用演示数据，不代表真实新闻或来源。</p>}</section>
     {safariInstall() && <section className="about-group"><h2>添加到主屏幕</h2><p className="install-hint"><Icon name="share" />在 Safari 分享菜单中选择「添加到主屏幕」。若有「作为网页 App 打开」选项，将它关闭，即可用 Safari 打开。</p></section>}
   </main></>;
@@ -282,20 +313,26 @@ function Site() {
   const { pathname, search } = useLocation();
   const now = useNow();
   const today = todayKey(now);
+  const favorites = useFavorites();
+  const collecting = /^\/favorites\/?$/.test(pathname);
   useLayoutEffect(() => {
     jumpToTop();
     const main = document.getElementById('main');
     if (main) { main.tabIndex = -1; main.focus({ preventScroll: true }); }
   }, [pathname]);
   useEffect(() => { pruneCache(); }, [today]);
-  return <><a className="skip-link" href="#main" onClick={IS_IOS_BUILD ? (event) => { event.preventDefault(); document.getElementById('main')?.focus(); } : undefined}>跳到内容</a><Routes>
+  return <FavoritesContext.Provider value={IS_PRIVATE_BUILD ? null : favorites}><div className={IS_PRIVATE_BUILD ? undefined : 'with-bottom-nav'}>
+    <a className="skip-link" href="#main" onClick={IS_IOS_BUILD ? (event) => { event.preventDefault(); document.getElementById('main')?.focus(); } : undefined}>跳到内容</a><Routes>
     <Route path="/" element={<Home key={search} now={now} />} />
     <Route path="/history" element={<History now={now} />} />
     <Route path="/history/:date" element={<HistoricalBrief now={now} />} />
     <Route path="/briefs/:date" element={<HistoricalBrief now={now} />} />
+    {!IS_PRIVATE_BUILD && <Route path="/favorites" element={<FavoritesScreen now={now} />} />}
     <Route path="/about" element={<About />} />
     <Route path="*" element={<><Header back="/" title="找不到页面" /><main id="main" className="shell main"><Notice title="找不到页面"><Link className="action" to="/">返回首页</Link></Notice></main></>} />
-  </Routes></>;
+  </Routes>{!IS_PRIVATE_BUILD && <><BottomNav collecting={collecting} />
+    <div className={favorites.message?.error ? 'favorite-error' : 'sr-only'} role="status">{favorites.message?.text}</div></>}
+  </div></FavoritesContext.Provider>;
 }
 
 export default function App() {

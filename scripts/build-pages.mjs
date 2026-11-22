@@ -23,7 +23,7 @@ for (const [date, report] of Object.entries(bundle.editions)) {
 await writeFile(join(output, 'editions', 'index.json'), `${JSON.stringify({ dates: dates.sort().reverse() })}\n`);
 await copyFile(source, join(output, 'news.json'));
 await writeFile(join(output, '.nojekyll'), '');
-for (const route of ['about', 'history', ...dates.flatMap((date) => [`history/${date}`, `briefs/${date}`])]) {
+for (const route of ['about', 'history', 'favorites', ...dates.flatMap((date) => [`history/${date}`, `briefs/${date}`])]) {
   const folder = join(output, route);
   await mkdir(folder, { recursive: true });
   await copyFile(join(output, 'index.html'), join(folder, 'index.html'));

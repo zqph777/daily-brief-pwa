@@ -53,6 +53,15 @@ button:disabled { cursor: default; }
 
 .main { padding-bottom: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 .main:focus { outline: none; }
+.with-bottom-nav .main { padding-bottom: 80px; padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+.bottom-nav { position: fixed; z-index: 12; inset: auto 0 0; border-top: 3px double var(--ink); background: var(--paper); padding-bottom: env(safe-area-inset-bottom); }
+.bottom-nav-inner { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bottom-nav-link { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; font-size: 13px; color: var(--muted); border-top: 2px solid transparent; }
+.bottom-nav-link + .bottom-nav-link { border-left: 1px solid var(--rule); }
+.bottom-nav-link[aria-current] { border-top-color: var(--ink); background: var(--surface); color: var(--ink); font-weight: 700; }
+.bottom-nav-link:focus-visible { outline-offset: -4px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.favorite-error { position: fixed; z-index: 13; inset: auto 16px 72px; bottom: calc(72px + env(safe-area-inset-bottom)); margin: auto; max-width: 440px; padding: 12px 16px; border: 1px solid var(--ink); background: var(--paper); color: var(--ink); font-size: 13px; }
 .scene { animation: enter 140ms ease-in-out both; }
 .page-intro { margin-top: 16px; padding: 16px 0 12px; border-top: 4px double var(--ink); }
 .page-intro h1 { font: 700 28px/1.2 var(--display); }
@@ -119,6 +128,14 @@ button.rating-stamp:active, button.rating-stamp[aria-expanded='true'] { backgrou
 .demo-illustrations .image-frame img { filter: grayscale(1) brightness(.89) contrast(1.7); }
 .image-frame::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle, rgb(32 31 28 / .26) .5px, transparent .72px) 0 0 / 3px 3px; mix-blend-mode: multiply; }
 .news-image figcaption { margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.editorial-art { margin: 12px 0; }
+.editorial-art-frame { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; min-height: 112px; border: 1px solid var(--rule); background: #f3f0e8; color: #242321; }
+.editorial-art-frame svg { display: block; width: 100%; height: clamp(104px, 36vw, 154px); }
+.editorial-art-type { display: grid; gap: 4px; padding: 8px 8px 8px 12px; border-left: 1px solid var(--rule); }
+.editorial-art-type > span { font-family: var(--display); font-size: 10px; letter-spacing: .08em; }
+.editorial-art-type strong { font-family: var(--display); font-size: clamp(16px, 4.8vw, 24px); line-height: 1.25; }
+.editorial-art-type small, .editorial-art figcaption { font-size: 11px; color: var(--muted); }
+.editorial-art figcaption { margin-top: 4px; }
 .figure-index { display: inline-block; margin-right: 4px; font-family: var(--display); font-weight: 700; }
 .news-meta { color: var(--muted); font-size: 12px; line-height: 1.4; }
 .news-meta time { white-space: nowrap; }
@@ -129,6 +146,12 @@ button.rating-stamp:active, button.rating-stamp[aria-expanded='true'] { backgrou
 a.article-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .article-link:active { background: var(--surface); transition: none; }
 .article-link.is-disabled { color: var(--muted); }
+.news-actions { display: flex; align-items: stretch; gap: 12px; margin-top: 8px; }
+.news-actions .article-link { min-width: 0; flex: 1; margin-top: 0; }
+.favorite-button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; flex: 0 0 84px; min-height: 44px; padding: 0 4px; border: 1px solid var(--rule); background: transparent; color: var(--ink); font-size: 13px; }
+.favorite-button[aria-pressed="true"] { border-color: var(--ink); background: var(--surface); }
+.favorite-button[aria-pressed="true"] svg { fill: currentColor; }
+.favorite-dateline { display: flex; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
 .is-disabled > :last-child { margin-left: 8px; font-size: 12px; }
 
 .notice { display: flex; flex-direction: column; align-items: center; padding: 0 16px 24px; padding-top: clamp(48px, 16vh, 144px); text-align: center; }
