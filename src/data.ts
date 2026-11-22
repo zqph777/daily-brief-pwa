@@ -1,4 +1,4 @@
-import { asTimestamp, DAY, isDateKey, shiftDate, todayKey, ZONE } from './dates';
+import { asTimestamp, DAY, inRetention, isDateKey, shiftDate, todayKey, ZONE } from './dates';
 import { mockBrief, mockHistory } from './mock';
 import { parseScoreInputs, type ScoreInputs } from './rating';
 
@@ -171,10 +171,14 @@ export function pruneCache() {
     catch { return; }
     return;
   }
-  storageKeys(PREFIX).forEach((key) => cached(key));
+  storageKeys(PREFIX).forEach((key) => {
+    if (!inRetention(key.slice(-10))) {
+      try { localStorage.removeItem(key); } catch { /* Storage can be unavailable. */ }
+    } else cached(key);
+  });
 }
 
-export function readBrief(date: string) { return cached<Brief>(`${BRIEF_PREFIX}${date}`); }
+export function readBrief(date: string) { return inRetention(date) ? cached<Brief>(`${BRIEF_PREFIX}${date}`) : undefined; }
 
 function cachedBriefDates() {
   return storageKeys(BRIEF_PREFIX).map((key) => key.slice(BRIEF_PREFIX.length)).filter(isDateKey).sort().reverse();
@@ -191,7 +195,7 @@ export function latestBrief(maxDate = todayKey()) {
 export async function loadBrief(date: string, signal: AbortSignal, allowLatest = false) {
   if (!navigator.onLine) throw new DataError('offline');
   if (IS_PAGES_BUILD) {
-    const selected = allowLatest ? (await publishedDates(signal)).find((entry) => entry <= date) : date;
+    const selected = allowLatest ? (await publishedDates(signal)).find((entry) => inRetention(entry, date)) : date;
     if (!selected) throw new DataError('missing');
     const brief = normalizeBrief(await json(`${API}/${selected}.json`, signal), selected);
     if (!signal.aborted) save(`${BRIEF_PREFIX}${selected}`, brief);

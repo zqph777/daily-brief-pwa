@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { BrowserRouter, HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { configurePrivateAccess, IS_IOS_BUILD, IS_MOCK, IS_PRIVATE_BUILD, latestBrief, loadBrief, loadHistory, pruneCache, readBrief, readHistory, SECTIONS, type Brief, type NewsImage, type NewsItem, type SectionId } from './data';
-import { dateLabel, isDateKey, publishedLabel, shiftDate, todayKey, updateLabel } from './dates';
+import { dateLabel, inRetention, isDateKey, publishedLabel, RETENTION_DAYS, shiftDate, todayKey, updateLabel } from './dates';
 import { Icon } from './icons';
 import { MAX_SCORE, newsRating, RATING_AXES } from './rating';
 import { useResource } from './useResource';
@@ -214,42 +214,42 @@ function Home({ now }: { now: number }) {
   const [params] = useSearchParams();
   const date = params.get('date');
   if (date !== null && !isDateKey(date)) return <><Header back="/" title="日期无效" /><main id="main" className="shell main"><Notice title="日期无效" description="请使用 YYYY-MM-DD 格式打开简报。"><Link className="action" to="/">返回首页</Link></Notice></main></>;
+  if (date !== null && !inRetention(date, todayKey(now))) return <UnavailableDate back="/history" />;
   return <BriefScreen key={date ?? todayKey(now)} date={date ?? todayKey(now)} now={now} home={date === null} back="/history" />;
+}
+
+function UnavailableDate({ back }: { back: string }) {
+  return <><Header back={back} title="简报不可用" /><main id="main" className="shell main"><Notice title="此日期不在保留范围内" description="仅保留最近七天的简报。"><Link className="action" to={back}>返回历史简报</Link></Notice></main></>;
 }
 
 function HistoricalBrief({ now }: { now: number }) {
   const { date } = useParams();
-  const location = useLocation();
-  const back = typeof location.state?.from === 'string' && /^\/history(?:\?days=\d+)?$/.test(location.state.from) ? location.state.from : '/history';
+  const back = '/history';
   if (!isDateKey(date)) return <><Header back={back} title="日期无效" /><main id="main" className="shell main"><Notice title="日期无效"><Link className="action" to={back}>返回历史日期列表</Link></Notice></main></>;
+  if (!inRetention(date, todayKey(now))) return <UnavailableDate back={back} />;
   return <BriefScreen key={date} date={date} home={false} now={now} back={back} />;
 }
 
 function History({ now }: { now: number }) {
   const today = todayKey(now);
-  const location = useLocation();
-  const [params, setParams] = useSearchParams();
-  const count = Math.min(181, Math.max(7, Math.trunc(Number(params.get('days'))) || 7));
-  const start = shiftDate(today, 1 - count);
+  const start = shiftDate(today, 1 - RETENTION_DAYS);
   const { state, reload } = useResource(`${today}:${start}`, (signal) => loadHistory(today, start, signal), () => readHistory(today, start));
   const entries = state.phase === 'ready' ? state.value : readHistory(today, start);
-  const from = location.pathname + location.search;
   useEffect(() => { document.title = `历史简报 · ${editionName}`; }, []);
   return <><Header back="/" title="历史简报" /><main id="main" className="shell main scene">
-    <div className="page-intro"><h1>历史简报</h1><p>选择日期，回看往期简报。</p></div>
+    <div className="page-intro"><h1>历史简报</h1><p>仅保留最近七天，按北京时间计算。</p></div>
     {state.phase === 'ready' && state.offline && <div className="banner" role="status"><Icon name="offline" />离线模式 · 正在显示已缓存的日期列表。</div>}
     {state.phase === 'failed' && state.reason === 'auth' ? <SignInNotice /> : state.phase === 'failed' ? <Notice icon={state.reason === 'offline' ? 'offline' : 'warning'} title={state.reason === 'offline' ? '离线模式' : '无法加载历史'}
       description={state.reason === 'offline' ? '目前没有缓存的历史日期。' : '暂时无法获取历史日期，请稍后重试。'}><Refresh onClick={reload}>重试</Refresh></Notice> : <>
-      {!!entries?.length && <ul className="date-list" aria-label="简报日期">{entries.filter((entry, index) => entry.available || index < 7).map(({ date, available }) => {
+      {!!entries?.length && <ul className="date-list" aria-label="简报日期">{entries.map(({ date, available }) => {
         const label = <>{dateLabel(date, date.slice(0, 4) !== today.slice(0, 4))}{date === today && <span className="today-tag">（今天）</span>}</>;
-        if (available) return <li key={date}><Link className={`date-row${date === today ? ' today' : ''}`} to={`/history/${date}`} state={{ from }}>
+        if (available) return <li key={date}><Link className={`date-row${date === today ? ' today' : ''}`} to={`/history/${date}`}>
           <time dateTime={date}>{label}</time><Icon name="next" />
         </Link></li>;
         return <li key={date}><div className={`date-row unavailable${date === today ? ' today' : ''}`}><time dateTime={date}>{label}</time><span>{state.phase === 'loading' || state.phase === 'slow' ? '确认中…' : state.phase === 'ready' && state.offline ? '暂无缓存' : '未生成'}</span></div></li>;
       })}</ul>}
       {state.phase === 'loading' && (!entries ? <Skeleton /> : <p className="history-progress" role="status">正在加载日期…</p>)}
       {state.phase === 'slow' && <Notice title="加载中…"><Refresh onClick={reload} /></Notice>}
-      {state.phase === 'ready' && count < 181 && <button className="load-more" type="button" onClick={() => setParams({ days: String(Math.min(181, count + 7)) }, { replace: true })}>加载更多<Icon name="down" /></button>}
     </>}
   </main></>;
 }
@@ -281,12 +281,13 @@ function About() {
 function Site() {
   const { pathname, search } = useLocation();
   const now = useNow();
+  const today = todayKey(now);
   useLayoutEffect(() => {
     jumpToTop();
     const main = document.getElementById('main');
     if (main) { main.tabIndex = -1; main.focus({ preventScroll: true }); }
   }, [pathname]);
-  useEffect(() => { pruneCache(); }, []);
+  useEffect(() => { pruneCache(); }, [today]);
   return <><a className="skip-link" href="#main" onClick={IS_IOS_BUILD ? (event) => { event.preventDefault(); document.getElementById('main')?.focus(); } : undefined}>跳到内容</a><Routes>
     <Route path="/" element={<Home key={search} now={now} />} />
     <Route path="/history" element={<History now={now} />} />

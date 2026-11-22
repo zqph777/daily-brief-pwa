@@ -1,5 +1,6 @@
 export const ZONE = 'Asia/Shanghai';
 export const DAY = 86_400_000;
+export const RETENTION_DAYS = 7;
 
 const calendar = new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
 
@@ -16,6 +17,10 @@ export function isDateKey(value: unknown): value is string {
 
 export function shiftDate(key: string, days: number) {
   return new Date(Date.parse(`${key}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
+}
+
+export function inRetention(date: string, today = todayKey()) {
+  return isDateKey(date) && date >= shiftDate(today, 1 - RETENTION_DAYS) && date <= today;
 }
 
 export function dateLabel(key: string, full = false) {
