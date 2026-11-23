@@ -4,6 +4,7 @@ import { configurePrivateAccess, IS_IOS_BUILD, IS_MOCK, IS_PRIVATE_BUILD, latest
 import { dateLabel, inRetention, isDateKey, publishedLabel, RETENTION_DAYS, shiftDate, todayKey, updateLabel } from './dates';
 import { favoriteKey, useFavorites, type Favorite } from './favorites';
 import { Icon } from './icons';
+import { NewsArt } from './newsArt';
 import { MAX_SCORE, newsRating, RATING_AXES } from './rating';
 import { useResource } from './useResource';
 import { version } from '../package.json';
@@ -24,11 +25,11 @@ function useNow() {
   return now;
 }
 
-function Header({ date, title, back, other = 'about' }: { date?: string; title?: string; back?: string; other?: 'about' | 'history' | null }) {
+function Header({ date, title, back, other = 'about' }: { date?: string; title?: string; back?: string; other?: 'about' | 'history' }) {
   const location = useLocation();
   const navigate = useNavigate();
   const from = `${location.pathname}${location.search}`;
-  const otherLink = other && <Link className="nav-link" to={`/${other}`} state={{ from }}>{other === 'about' ? '关于' : '历史'}</Link>;
+  const otherLink = <Link className="nav-link" to={`/${other}`} state={{ from }}>{other === 'about' ? '关于' : '历史'}</Link>;
   return <header className="topbar">
     {back ? <div className="shell topbar-content inner-bar">
       <Link className="nav-link back-link" to={back} onClick={(event) => {
@@ -62,17 +63,19 @@ function SectionTabs({ section, select }: { section: SectionId; select: (section
   )}</div>;
 }
 
-function NewsGallery({ images, sourceUrl }: { images: NewsImage[]; sourceUrl?: string }) {
+function NewsGallery({ images, fallback }: { images: NewsImage[]; fallback: ReactNode }) {
   const [failed, setFailed] = useState<string[]>([]);
-  const image = images.find(({ url, kind }) => kind === 'photo' && !failed.includes(url));
-  if (!image || !sourceUrl) return null;
-  const { url, alt, caption, credit } = image;
-  return <figure className="news-photo">
-    <a className="photo-frame" href={sourceUrl} target="_blank" rel="noopener noreferrer">
-      <img src={url} alt={alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed((previous) => [...previous, url])} />
-    </a>
-    <figcaption><span>原文照片</span>{[caption, credit].filter(Boolean).map((part, index) => <span key={index}> · {part}</span>)}</figcaption>
-  </figure>;
+  const visible = images.filter(({ url }) => !failed.includes(url));
+  if (!visible.length) return fallback;
+  return <div className="news-gallery">
+    {IS_MOCK && <p className="gallery-label">本报插图</p>}
+    <div className={`gallery-grid${visible.length === 1 ? ' single-image' : ''}${IS_MOCK ? ' demo-illustrations' : ''}`}>
+      {visible.map(({ url, alt, caption, credit }, index) => <figure className="news-image" key={url}>
+        <div className="image-frame"><img src={url} alt={alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed((previous) => [...previous, url])} /></div>
+        {(caption || credit || IS_MOCK) && <figcaption>{IS_MOCK && <span className="figure-index">图 {index + 1}</span>}{[caption, credit].filter(Boolean).join(' · ')}</figcaption>}
+      </figure>)}
+    </div>
+  </div>;
 }
 
 function NewsCard({ entry, now, index, collection = false }: { entry: Favorite; now: number; index: number; collection?: boolean }) {
@@ -81,7 +84,6 @@ function NewsCard({ entry, now, index, collection = false }: { entry: Favorite; 
   const saved = favorites?.keys.has(favoriteKey(entry)) ?? false;
   const rating = newsRating(item.editorial_score, item.importance);
   const [ratingOpen, setRatingOpen] = useState(false);
-  const [favoritePulse, setFavoritePulse] = useState(0);
   const ratingId = useId();
   const scoreLabel = rating?.kind === 'importance' ? '重要性' : '信息评分';
   return <article className="news">
@@ -102,7 +104,7 @@ function NewsCard({ entry, now, index, collection = false }: { entry: Favorite; 
         {rating.capped && <p>核心证据不足，总分上限为 2.0。</p>}
       </> : <p>该简报仅提供 1–5 级重要性，尚无五项评分明细。重要性不代表事实可信度。</p>}
     </div>}
-    <NewsGallery images={item.images ?? []} sourceUrl={item.source_url} />
+    <NewsGallery images={item.images ?? []} fallback={<NewsArt item={item} section={section} />} />
     {item.what_happened && <NewsCopy title="发生了什么" text={item.what_happened} limit={collection ? undefined : 150} />}
     {item.possible_impact && <NewsCopy title="可能的影响" text={item.possible_impact} limit={collection ? undefined : 100} />}
     {item.uncertainty_note && <div className="uncertainty"><span className="badge"><Icon name="warning" size={13} />尚未证实</span><p>{item.uncertainty_note}</p></div>}
@@ -111,11 +113,7 @@ function NewsCard({ entry, now, index, collection = false }: { entry: Favorite; 
       aria-label={`阅读原文（新标签页）：${item.title}`}>阅读原文<Icon name="external" /></a> :
       <button type="button" className="article-link is-disabled" disabled><span>原文链接不可用</span></button>}
     {favorites && <button type="button" className="favorite-button" aria-pressed={saved} aria-label={`收藏：${item.title}`}
-      onClick={() => {
-        if (favorites.toggle(entry) !== 'added') return;
-        setFavoritePulse((value) => value + 1);
-        if (typeof navigator.vibrate === 'function') navigator.vibrate(15);
-      }}><span key={favoritePulse} className={`favorite-icon${favoritePulse && saved ? ' favorite-pop' : ''}`}><Icon name="bookmark" size={19} /></span>{saved ? '已收藏' : '收藏'}</button>}</div>
+      onClick={() => favorites.toggle(entry)}><Icon name="bookmark" size={19} />{saved ? '已收藏' : '收藏'}</button>}</div>
     {!!item.supporting_sources?.length && <details className="news-meta"><summary>佐证来源</summary><ul>
       {item.supporting_sources.map((source) => <li key={source.source_url}><a href={source.source_url} target="_blank" rel="noopener noreferrer">{source.source_name}</a>
         {source.published_at && <> <span aria-hidden="true">·</span> <time dateTime={source.published_at}>{publishedLabel(source.published_at, zone, now)}</time></>}</li>)}
@@ -280,7 +278,7 @@ function FavoritesScreen({ now }: { now: number }) {
   const favorites = useContext(FavoritesContext);
   const entries = favorites?.entries ?? [];
   useEffect(() => { document.title = `收藏 · ${editionName}`; }, []);
-  return <><Header back="/" title="收藏" other={null} /><main id="main" className="shell main scene">
+  return <><Header back="/" title="收藏" /><main id="main" className="shell main scene">
     <div className="page-intro"><h1>收藏</h1><p>仅保存在当前浏览器，不随简报过期删除。</p></div>
     {entries.length ? <div className="news-list" aria-label="已收藏的新闻">
       <div className="section-caption"><span>已保存</span><span className="section-count">{entries.length} 条</span></div>
@@ -291,8 +289,7 @@ function FavoritesScreen({ now }: { now: number }) {
 
 function BottomNav({ collecting }: { collecting: boolean }) {
   return <nav className="bottom-nav" aria-label="主导航">
-    <div className="bottom-nav-inner" data-active={collecting ? 'favorites' : 'news'}>
-      <span className="bottom-nav-indicator" aria-hidden="true"><span /></span>
+    <div className="shell bottom-nav-inner">
       <Link to="/" className="bottom-nav-link" aria-current={!collecting ? 'page' : undefined}><Icon name="page" size={20} />新闻</Link>
       <Link to="/favorites/" className="bottom-nav-link" aria-current={collecting ? 'page' : undefined}><Icon name="bookmark" size={20} />收藏</Link>
     </div>
