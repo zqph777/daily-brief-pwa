@@ -12,6 +12,15 @@ import { version } from '../package.json';
 const editionName = '一日之计';
 const FavoritesContext = createContext<ReturnType<typeof useFavorites> | null>(null);
 
+const newsSectionKey = 'morning-edition:news-section';
+
+type SectionSelection = { section: SectionId; setSection: (section: SectionId) => void };
+
+function initialNewsSection(): SectionId {
+  try { return sessionStorage.getItem(newsSectionKey) === 'world' ? 'world' : 'ai'; }
+  catch { return 'ai'; }
+}
+
 const jumpToTop = () => window.scrollTo(0, 0);
 
 function useNow() {
@@ -173,8 +182,9 @@ function SignInNotice() {
   </Notice>;
 }
 
-function BriefScreen({ date, home, now, back }: { date: string; home: boolean; now: number; back: string }) {
-  const [section, setSection] = useState<SectionId>('ai');
+function BriefScreen({ date, home, now, back, selection }: { date: string; home: boolean; now: number; back: string; selection?: SectionSelection }) {
+  const [localSection, setLocalSection] = useState<SectionId>('ai');
+  const { section, setSection } = selection ?? { section: localSection, setSection: setLocalSection };
   const { state, reload, attempt } = useResource(date, (signal) => loadBrief(date, signal, home), () => readBrief(date) ?? (home ? latestBrief(date) : undefined));
   const brief = state.phase === 'ready' ? state.value : undefined;
   const loading = state.phase === 'loading' || state.phase === 'slow';
@@ -235,12 +245,13 @@ function BriefScreen({ date, home, now, back }: { date: string; home: boolean; n
   </>;
 }
 
-function Home({ now }: { now: number }) {
+function Home({ now, selection }: { now: number; selection: SectionSelection }) {
   const [params] = useSearchParams();
   const date = params.get('date');
   if (date !== null && !isDateKey(date)) return <><Header back="/" title="日期无效" /><main id="main" className="shell main"><Notice title="日期无效" description="请使用 YYYY-MM-DD 格式打开简报。"><Link className="action" to="/">返回首页</Link></Notice></main></>;
   if (date !== null && !inRetention(date, todayKey(now))) return <UnavailableDate back="/history" />;
-  return <BriefScreen key={date ?? todayKey(now)} date={date ?? todayKey(now)} now={now} home={date === null} back="/history" />;
+  return <BriefScreen key={date ?? todayKey(now)} date={date ?? todayKey(now)} now={now} home={date === null} back="/history"
+    selection={date === null ? selection : undefined} />;
 }
 
 function UnavailableDate({ back }: { back: string }) {
@@ -289,13 +300,13 @@ function FavoritesScreen({ now }: { now: number }) {
   const favorites = useContext(FavoritesContext);
   const entries = favorites?.entries ?? [];
   useEffect(() => { document.title = `收藏 · ${editionName}`; }, []);
-  return <><Header back="/" title="收藏" other={null} /><main id="main" className="shell main scene">
+  return <main id="main" className="shell main scene">
     <div className="page-intro"><h1>收藏</h1><p>仅保存在当前浏览器，不随简报过期删除。</p></div>
     {entries.length ? <div className="news-list" aria-label="已收藏的新闻">
       <div className="section-caption"><span>已保存</span><span className="section-count">{entries.length} 条</span></div>
       {entries.map((entry, index) => <NewsCard key={favoriteKey(entry)} entry={entry} index={index} now={now} collection />)}
     </div> : <Notice title="还没有收藏" description="看到想留着的新闻，点新闻旁的「收藏」。"><Link className="action" to="/">去看新闻</Link></Notice>}
-  </main></>;
+  </main>;
 }
 
 function BottomNav({ collecting }: { collecting: boolean }) {
@@ -331,6 +342,7 @@ function Site() {
   const now = useNow();
   const today = todayKey(now);
   const favorites = useFavorites();
+  const [newsSection, setNewsSection] = useState(initialNewsSection);
   const collecting = /^\/favorites\/?$/.test(pathname);
   useLayoutEffect(() => {
     jumpToTop();
@@ -338,9 +350,13 @@ function Site() {
     if (main) { main.tabIndex = -1; main.focus({ preventScroll: true }); }
   }, [pathname]);
   useEffect(() => { pruneCache(); }, [today]);
+  useEffect(() => {
+    try { sessionStorage.setItem(newsSectionKey, newsSection); }
+    catch { /* The tab selection still lives in Site while the app is open. */ }
+  }, [newsSection]);
   return <FavoritesContext.Provider value={IS_PRIVATE_BUILD ? null : favorites}><div className={IS_PRIVATE_BUILD ? undefined : 'with-bottom-nav'}>
     <a className="skip-link" href="#main" onClick={IS_IOS_BUILD ? (event) => { event.preventDefault(); document.getElementById('main')?.focus(); } : undefined}>跳到内容</a><Routes>
-    <Route path="/" element={<Home key={search} now={now} />} />
+    <Route path="/" element={<Home key={search} now={now} selection={{ section: newsSection, setSection: setNewsSection }} />} />
     <Route path="/history" element={<History now={now} />} />
     <Route path="/history/:date" element={<HistoricalBrief now={now} />} />
     <Route path="/briefs/:date" element={<HistoricalBrief now={now} />} />
