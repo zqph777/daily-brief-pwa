@@ -25,11 +25,11 @@ function useNow() {
   return now;
 }
 
-function Header({ date, title, back, other = 'about' }: { date?: string; title?: string; back?: string; other?: 'about' | 'history' }) {
+function Header({ date, title, back, other = 'about' }: { date?: string; title?: string; back?: string; other?: 'about' | 'history' | null }) {
   const location = useLocation();
   const navigate = useNavigate();
   const from = `${location.pathname}${location.search}`;
-  const otherLink = <Link className="nav-link" to={`/${other}`} state={{ from }}>{other === 'about' ? '关于' : '历史'}</Link>;
+  const otherLink = other && <Link className="nav-link" to={`/${other}`} state={{ from }}>{other === 'about' ? '关于' : '历史'}</Link>;
   return <header className="topbar">
     {back ? <div className="shell topbar-content inner-bar">
       <Link className="nav-link back-link" to={back} onClick={(event) => {
@@ -84,6 +84,7 @@ function NewsCard({ entry, now, index, collection = false }: { entry: Favorite; 
   const saved = favorites?.keys.has(favoriteKey(entry)) ?? false;
   const rating = newsRating(item.editorial_score, item.importance);
   const [ratingOpen, setRatingOpen] = useState(false);
+  const [favoriteAnimation, setFavoriteAnimation] = useState(0);
   const ratingId = useId();
   const scoreLabel = rating?.kind === 'importance' ? '重要性' : '信息评分';
   return <article className="news">
@@ -113,7 +114,11 @@ function NewsCard({ entry, now, index, collection = false }: { entry: Favorite; 
       aria-label={`阅读原文（新标签页）：${item.title}`}>阅读原文<Icon name="external" /></a> :
       <button type="button" className="article-link is-disabled" disabled><span>原文链接不可用</span></button>}
     {favorites && <button type="button" className="favorite-button" aria-pressed={saved} aria-label={`收藏：${item.title}`}
-      onClick={() => favorites.toggle(entry)}><Icon name="bookmark" size={19} />{saved ? '已收藏' : '收藏'}</button>}</div>
+      onClick={() => {
+        if (favorites.toggle(entry) !== 'added') return;
+        setFavoriteAnimation((value) => value + 1);
+        navigator.vibrate?.(12);
+      }}><span key={favoriteAnimation} className={`favorite-icon${favoriteAnimation && saved ? ' favorite-pop' : ''}`}><Icon name="bookmark" size={19} /></span>{saved ? '已收藏' : '收藏'}</button>}</div>
     {!!item.supporting_sources?.length && <details className="news-meta"><summary>佐证来源</summary><ul>
       {item.supporting_sources.map((source) => <li key={source.source_url}><a href={source.source_url} target="_blank" rel="noopener noreferrer">{source.source_name}</a>
         {source.published_at && <> <span aria-hidden="true">·</span> <time dateTime={source.published_at}>{publishedLabel(source.published_at, zone, now)}</time></>}</li>)}
@@ -196,11 +201,17 @@ function BriefScreen({ date, home, now, back }: { date: string; home: boolean; n
     if (state.phase !== 'ready') return null;
     const items = state.value.sections[sectionId];
     const incomplete = state.value.sectionNotices?.[sectionId] === 'source_coverage_incomplete';
-    if (!items.length && incomplete) return <Notice icon="warning" title="来源覆盖不完整" description="该板块部分来源未能采集或核验，暂时没有可展示的新闻。" />;
-    if (!items.length) return <Notice title="暂无新闻" description={state.value.date === todayKey(now) ? '今天这个板块还没有重要新闻。' : '这天的这个板块没有重要新闻。'}>
-      {home && attempt > 0 && !state.offline && <span className="next-update">计划推送时间：每天 08:30</span>}
-      {!awaitingPublication && <Refresh onClick={reload} />}
-    </Notice>;
+    if (!items.length) {
+      const ai = sectionId === 'ai';
+      const title = incomplete ? '来源覆盖不完整' : ai ? '本期暂无 AI 新闻' : '暂无新闻';
+      const description = incomplete ? '该板块部分来源未能采集或核验，暂时没有可展示的新闻。' :
+        ai ? '本期没有达到收录标准的 AI 新闻。' : '本期没有重要的世界新闻。';
+      return <Notice icon={incomplete ? 'warning' : 'page'} title={title} description={description}>
+        {!incomplete && home && attempt > 0 && !state.offline && <span className="next-update">计划推送时间：每天 08:30</span>}
+        {ai ? <Link className="action" to={home ? '/history/' : '/'}>{home ? '查看其他日期' : '查看最新简报'}</Link> :
+          !incomplete && !awaitingPublication && <Refresh onClick={reload} />}
+      </Notice>;
+    }
     return <div className="news-list">
       {incomplete && <div className="banner warn" role="status">部分来源未能采集或核验。</div>}
       <div className="section-caption"><span>{sectionId === 'ai' ? '人工智能与科技' : '国际与经济'}</span><span className="section-count">本期 {items.length} 条</span></div>
@@ -278,7 +289,7 @@ function FavoritesScreen({ now }: { now: number }) {
   const favorites = useContext(FavoritesContext);
   const entries = favorites?.entries ?? [];
   useEffect(() => { document.title = `收藏 · ${editionName}`; }, []);
-  return <><Header back="/" title="收藏" /><main id="main" className="shell main scene">
+  return <><Header back="/" title="收藏" other={null} /><main id="main" className="shell main scene">
     <div className="page-intro"><h1>收藏</h1><p>仅保存在当前浏览器，不随简报过期删除。</p></div>
     {entries.length ? <div className="news-list" aria-label="已收藏的新闻">
       <div className="section-caption"><span>已保存</span><span className="section-count">{entries.length} 条</span></div>
@@ -289,7 +300,8 @@ function FavoritesScreen({ now }: { now: number }) {
 
 function BottomNav({ collecting }: { collecting: boolean }) {
   return <nav className="bottom-nav" aria-label="主导航">
-    <div className="shell bottom-nav-inner">
+    <div className="bottom-nav-inner" data-active={collecting ? 'favorites' : 'news'}>
+      <span className="bottom-nav-indicator" aria-hidden="true" />
       <Link to="/" className="bottom-nav-link" aria-current={!collecting ? 'page' : undefined}><Icon name="page" size={20} />新闻</Link>
       <Link to="/favorites/" className="bottom-nav-link" aria-current={collecting ? 'page' : undefined}><Icon name="bookmark" size={20} />收藏</Link>
     </div>

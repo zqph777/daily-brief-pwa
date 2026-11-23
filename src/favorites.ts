@@ -50,8 +50,10 @@ export function useFavorites() {
       storage.setItem(storageKey, JSON.stringify(next));
       setEntries(next);
       setMessage({ text: removing ? '已取消收藏' : '已添加到收藏', error: false });
+      return removing ? 'removed' : 'added';
     } catch {
       setMessage({ text: '无法保存收藏，请检查浏览器的站点存储。', error: true });
+      return 'failed';
     }
   }
 
