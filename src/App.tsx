@@ -120,8 +120,8 @@ function NewsCard({ entry, now, index, collection = false }: { entry: Favorite; 
       </> : <p>该简报仅提供 1–5 级重要性，尚无五项评分明细。重要性不代表事实可信度。</p>}
     </div>}
     <NewsGallery images={item.images ?? []} fallback={<NewsArt item={item} section={section} />} />
-    {item.what_happened && <NewsCopy title="内容" text={item.what_happened} limit={collection ? undefined : 150} />}
-    {item.possible_impact && <NewsCopy title="影响" text={item.possible_impact} limit={collection ? undefined : 100} />}
+    {item.what_happened && <NewsCopy title="内容" text={item.what_happened} limit={collection ? undefined : 240} />}
+    {item.possible_impact && <NewsCopy title="影响" text={item.possible_impact} limit={collection ? undefined : 160} />}
     {item.uncertainty_note && <div className="uncertainty"><span className="badge"><Icon name="warning" size={13} />尚未证实</span><p>{item.uncertainty_note}</p></div>}
     <div className="news-meta">{item.source_name}{item.published_at && <> <span aria-hidden="true">·</span> <time dateTime={item.published_at}>{publishedLabel(item.published_at, zone, now)}</time></>}</div>
     <div className="news-actions">{item.source_url ? <a className="article-link" href={item.source_url} target="_blank" rel="noopener noreferrer"
@@ -153,11 +153,27 @@ function EditionCover({ date, title }: { date?: string; title: string }) {
   </div>;
 }
 
+function sentenceExcerpt(text: string, limit: number) {
+  if (text.length <= limit) return text;
+  let end = 0;
+  for (const match of text.matchAll(/[。！？!?]+[”’」』）】》]*|\.(?=\s|$)/gu)) {
+    const next = match.index + match[0].length;
+    if (next > limit) break;
+    end = next;
+  }
+  return end ? text.slice(0, end) : text;
+}
+
 function NewsCopy({ title, text, limit }: { title: string; text: string; limit?: number }) {
-  const characters = Array.from(text);
-  const excerpt = limit && characters.length > limit ? `${characters.slice(0, limit - 1).join('').trimEnd()}…` : text;
-  const [first, ...rest] = excerpt.split(/\n\s*\n/u);
-  return <div className="news-copy"><h3>{title}</h3><p>{first}</p>{rest.length > 0 && <p>{rest.join('\n')}</p>}</div>;
+  const [expanded, setExpanded] = useState(false);
+  const textId = useId();
+  const excerpt = limit === undefined ? text : sentenceExcerpt(text, limit);
+  const [first, ...rest] = (expanded ? text : excerpt).split(/\n\s*\n/u);
+  return <div className="news-copy"><h3>{title}</h3>
+    <div id={textId}><p>{first}</p>{rest.length > 0 && <p>{rest.join('\n')}</p>}</div>
+    {excerpt !== text && <button type="button" className="news-copy-toggle" aria-controls={textId} aria-expanded={expanded}
+      onClick={() => setExpanded(!expanded)}>{expanded ? `收起${title}` : `展开完整${title}`}</button>}
+  </div>;
 }
 
 function Skeleton() {

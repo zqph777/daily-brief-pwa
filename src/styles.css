@@ -168,6 +168,7 @@ button.rating-stamp:active, button.rating-stamp[aria-expanded='true'] { backgrou
 .news-copy h3 { color: var(--ink); font: 700 14px/1.55 var(--display); margin-bottom: 2px; }
 .news-copy p { white-space: pre-line; }
 .news-copy p + p { margin-top: 8px; }
+.news-copy-toggle { min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--link); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
 .news-gallery { margin-top: 14px; }
 .gallery-label { display: flex; align-items: center; margin-bottom: 5px; color: var(--muted); font-size: 10px; letter-spacing: .16em; line-height: 1.4; }
 .gallery-label::after { content: ''; flex: 1; height: 1px; margin-left: 8px; background: var(--rule); }
