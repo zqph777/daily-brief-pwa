@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DataError, type Failure } from './data';
 
 type LoadState<Value> = { phase: 'loading' | 'slow' } | { phase: 'ready'; value: Value; offline: boolean } | { phase: 'failed'; reason: Failure };
@@ -9,7 +9,7 @@ export function useResource<Value>(key: string, load: (signal: AbortSignal) => P
   const [attempt, setAttempt] = useState(0);
   const [snapshot, setSnapshot] = useState<{ id: string; state: LoadState<Value> }>({ id: '', state: { phase: 'loading' } });
   const id = `${key}:${attempt}`;
-  const reload = () => setAttempt((value) => value + 1);
+  const reload = useCallback(() => setAttempt((value) => value + 1), []);
 
   useEffect(() => {
     const update = () => setAttempt((value) => value + 1);

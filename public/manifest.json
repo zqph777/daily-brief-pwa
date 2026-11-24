@@ -3,7 +3,7 @@
   "name": "一日之计",
   "short_name": "一日之计",
   "lang": "zh-CN",
-  "description": "计划每天北京时间 08:30 推送的个人新闻简报。",
+  "description": "每天北京时间 08:30 更新并推送的个人新闻简报。",
   "start_url": "./",
   "scope": "./",
   "display": "browser",

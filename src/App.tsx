@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { BrowserRouter, HashRouter, Link, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { configurePrivateAccess, IS_IOS_BUILD, IS_MOCK, IS_PRIVATE_BUILD, latestBrief, loadBrief, loadHistory, pruneCache, readBrief, readHistory, SECTIONS, type Brief, type NewsImage, type SectionId } from './data';
-import { dateLabel, inRetention, isDateKey, publishedLabel, RETENTION_DAYS, shiftDate, todayKey, updateLabel } from './dates';
+import { dateLabel, editionDate, editionReleaseAt, EDITION_TIME, inRetention, isDateKey, publishedLabel, RETENTION_DAYS, shiftDate, todayKey, updateLabel } from './dates';
 import { favoriteKey, useFavorites, type Favorite } from './favorites';
 import { Icon } from './icons';
 import { NewsArt } from './newsArt';
@@ -25,12 +25,17 @@ const jumpToTop = () => window.scrollTo(0, 0);
 
 function useNow() {
   const [now, setNow] = useState(Date.now);
+  const nextRelease = editionReleaseAt(shiftDate(editionDate(now), 1));
   useEffect(() => {
     const update = () => setNow(Date.now());
     const timer = window.setInterval(update, 30_000);
     document.addEventListener('visibilitychange', update);
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', update); };
   }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.max(0, nextRelease - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [nextRelease]);
   return now;
 }
 
@@ -115,8 +120,8 @@ function NewsCard({ entry, now, index, collection = false }: { entry: Favorite; 
       </> : <p>该简报仅提供 1–5 级重要性，尚无五项评分明细。重要性不代表事实可信度。</p>}
     </div>}
     <NewsGallery images={item.images ?? []} fallback={<NewsArt item={item} section={section} />} />
-    {item.what_happened && <NewsCopy title="发生了什么" text={item.what_happened} limit={collection ? undefined : 150} />}
-    {item.possible_impact && <NewsCopy title="可能的影响" text={item.possible_impact} limit={collection ? undefined : 100} />}
+    {item.what_happened && <NewsCopy title="内容" text={item.what_happened} limit={collection ? undefined : 150} />}
+    {item.possible_impact && <NewsCopy title="影响" text={item.possible_impact} limit={collection ? undefined : 100} />}
     {item.uncertainty_note && <div className="uncertainty"><span className="badge"><Icon name="warning" size={13} />尚未证实</span><p>{item.uncertainty_note}</p></div>}
     <div className="news-meta">{item.source_name}{item.published_at && <> <span aria-hidden="true">·</span> <time dateTime={item.published_at}>{publishedLabel(item.published_at, zone, now)}</time></>}</div>
     <div className="news-actions">{item.source_url ? <a className="article-link" href={item.source_url} target="_blank" rel="noopener noreferrer"
@@ -143,7 +148,7 @@ function EditionCover({ date, title }: { date?: string; title: string }) {
     <div className="edition-dateline">
       {date && <time dateTime={date}>{dateLabel(date, true)} <span className="edition-weekday">{weekday}</span></time>}
       {IS_MOCK && <span className="demo-label">演示数据</span>}
-      <span className="edition-update">计划 08:30 推送</span>
+      <span className="edition-update">每日 {EDITION_TIME} 更新</span>
     </div>
   </div>;
 }
@@ -191,11 +196,19 @@ function BriefScreen({ date, home, now, back, selection }: { date: string; home:
   const shownDate = home ? brief?.date ?? (loading ? latestBrief(date)?.date : undefined) : date;
   const previousEdition = shownDate !== undefined && shownDate < date;
   const awaitingPublication = home && previousEdition && state.phase === 'ready' && !state.offline;
-  const title = home ? state.phase === 'ready' && state.offline ? '缓存简报' : previousEdition ? '最近一期' : shownDate ? '今日简报' : '新闻简报' : '往期简报';
+  const title = home ? state.phase === 'ready' && state.offline ? '缓存简报' :
+    shownDate === todayKey(now) ? '今日简报' : shownDate ? '最近一期' : '新闻简报' : '往期简报';
   const outdated = !!(home && brief?.generated_at && now - Date.parse(brief.generated_at) > 36 * 3_600_000);
   const select = (next: SectionId) => { if (next !== section) { setSection(next); jumpToTop(); } };
   const unavailable = state.phase === 'failed' && state.reason === 'missing';
   useEffect(() => { document.title = `${home ? title : dateLabel(date)} · ${editionName}`; }, [date, home, title]);
+  useEffect(() => {
+    if (!home || (!awaitingPublication && !unavailable)) return;
+    const refreshWhenVisible = () => { if (!document.hidden) reload(); };
+    const timer = window.setInterval(refreshWhenVisible, 60_000);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshWhenVisible); };
+  }, [home, awaitingPublication, unavailable, reload]);
 
   function content(sectionId: SectionId) {
     if (state.phase === 'loading') return <Skeleton />;
@@ -217,7 +230,7 @@ function BriefScreen({ date, home, now, back, selection }: { date: string; home:
       const description = incomplete ? '该板块部分来源未能采集或核验，暂时没有可展示的新闻。' :
         ai ? '本期没有达到收录标准的 AI 新闻。' : '本期没有重要的世界新闻。';
       return <Notice icon={incomplete ? 'warning' : 'page'} title={title} description={description}>
-        {!incomplete && home && attempt > 0 && !state.offline && <span className="next-update">计划推送时间：每天 08:30</span>}
+        {!incomplete && home && attempt > 0 && !state.offline && <span className="next-update">每天 {EDITION_TIME} 更新并推送</span>}
         {ai ? <Link className="action" to={home ? '/history/' : '/'}>{home ? '查看其他日期' : '查看最新简报'}</Link> :
           !incomplete && !awaitingPublication && <Refresh onClick={reload} />}
       </Notice>;
@@ -250,8 +263,14 @@ function Home({ now, selection }: { now: number; selection: SectionSelection }) 
   const date = params.get('date');
   if (date !== null && !isDateKey(date)) return <><Header back="/" title="日期无效" /><main id="main" className="shell main"><Notice title="日期无效" description="请使用 YYYY-MM-DD 格式打开简报。"><Link className="action" to="/">返回首页</Link></Notice></main></>;
   if (date !== null && !inRetention(date, todayKey(now))) return <UnavailableDate back="/history" />;
-  return <BriefScreen key={date ?? todayKey(now)} date={date ?? todayKey(now)} now={now} home={date === null} back="/history"
+  const latest = editionDate(now);
+  if (date !== null && date > latest) return <UpcomingEdition date={date} back="/history" />;
+  return <BriefScreen key={date ?? latest} date={date ?? latest} now={now} home={date === null} back="/history"
     selection={date === null ? selection : undefined} />;
+}
+
+function UpcomingEdition({ date, back }: { date: string; back: string }) {
+  return <><Header back={back} title={dateLabel(date)} /><main id="main" className="shell main"><Notice title={`今日简报将于北京时间 ${EDITION_TIME} 更新`}><Link className="action" to="/">查看最近一期</Link></Notice></main></>;
 }
 
 function UnavailableDate({ back }: { back: string }) {
@@ -263,13 +282,15 @@ function HistoricalBrief({ now }: { now: number }) {
   const back = '/history';
   if (!isDateKey(date)) return <><Header back={back} title="日期无效" /><main id="main" className="shell main"><Notice title="日期无效"><Link className="action" to={back}>返回历史日期列表</Link></Notice></main></>;
   if (!inRetention(date, todayKey(now))) return <UnavailableDate back={back} />;
+  if (date > editionDate(now)) return <UpcomingEdition date={date} back={back} />;
   return <BriefScreen key={date} date={date} home={false} now={now} back={back} />;
 }
 
 function History({ now }: { now: number }) {
   const today = todayKey(now);
+  const publishedThrough = editionDate(now);
   const start = shiftDate(today, 1 - RETENTION_DAYS);
-  const { state, reload } = useResource(`${today}:${start}`, (signal) => loadHistory(today, start, signal), () => readHistory(today, start));
+  const { state, reload } = useResource(`${today}:${publishedThrough}`, (signal) => loadHistory(today, start, signal), () => readHistory(today, start));
   const entries = state.phase === 'ready' ? state.value : readHistory(today, start);
   useEffect(() => { document.title = `历史简报 · ${editionName}`; }, []);
   return <><Header back="/" title="历史简报" /><main id="main" className="shell main scene">
@@ -279,10 +300,10 @@ function History({ now }: { now: number }) {
       description={state.reason === 'offline' ? '目前没有缓存的历史日期。' : '暂时无法获取历史日期，请稍后重试。'}><Refresh onClick={reload}>重试</Refresh></Notice> : <>
       {!!entries?.length && <ul className="date-list" aria-label="简报日期">{entries.map(({ date, available }) => {
         const label = <>{dateLabel(date, date.slice(0, 4) !== today.slice(0, 4))}{date === today && <span className="today-tag">（今天）</span>}</>;
-        if (available) return <li key={date}><Link className={`date-row${date === today ? ' today' : ''}`} to={`/history/${date}`}>
+        if (available && date <= publishedThrough) return <li key={date}><Link className={`date-row${date === today ? ' today' : ''}`} to={`/history/${date}`}>
           <time dateTime={date}>{label}</time><Icon name="next" />
         </Link></li>;
-        return <li key={date}><div className={`date-row unavailable${date === today ? ' today' : ''}`}><time dateTime={date}>{label}</time><span>{state.phase === 'loading' || state.phase === 'slow' ? '确认中…' : state.phase === 'ready' && state.offline ? '暂无缓存' : '未生成'}</span></div></li>;
+        return <li key={date}><div className={`date-row unavailable${date === today ? ' today' : ''}`}><time dateTime={date}>{label}</time><span>{date > publishedThrough ? `${EDITION_TIME} 更新` : state.phase === 'loading' || state.phase === 'slow' ? '确认中…' : state.phase === 'ready' && state.offline ? '暂无缓存' : '未生成'}</span></div></li>;
       })}</ul>}
       {state.phase === 'loading' && (!entries ? <Skeleton /> : <p className="history-progress" role="status">正在加载日期…</p>)}
       {state.phase === 'slow' && <Notice title="加载中…"><Refresh onClick={reload} /></Notice>}
@@ -327,7 +348,7 @@ function About() {
   useEffect(() => { document.title = `关于 · ${editionName}`; }, []);
   return <><Header back={back} other="history" title="关于" /><main id="main" className="shell main scene about">
     <div className="about-brand"><img width="128" height="128" src={`${import.meta.env.BASE_URL}brand/morning.svg`} alt="" /><h1>{editionName}</h1><p>v{version}</p></div>
-    <section className="about-group"><h2>推送时间</h2><p>计划每天北京时间 08:30 推送。</p>{latest?.generated_at && <p className="secondary">最后更新于 {updateLabel(latest.generated_at, latest.timezone)}</p>}
+    <section className="about-group"><h2>更新时间</h2><p>每天北京时间 {EDITION_TIME} 更新并推送。</p>{latest?.generated_at && <p className="secondary">最近一期生成于 {updateLabel(latest.generated_at, latest.timezone)}</p>}
       <h2>覆盖时间范围</h2><p>前一天 08:00 至当天 08:00（北京时间）。</p>
       {latest && <p className="secondary">{latest.coverage_start && latest.coverage_end ? `最近简报：${updateLabel(latest.coverage_start, latest.timezone)} 至 ${updateLabel(latest.coverage_end, latest.timezone)}` : '最近简报的时间范围未知。'}</p>}</section>
     <section className="about-group"><h2>信息来源</h2><p>新闻由多个来源汇总、去重并精选，每条新闻注明来源。原文链接可用时，可直接打开核对。</p></section>

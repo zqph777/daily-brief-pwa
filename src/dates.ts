@@ -3,6 +3,7 @@ export const DAY = 86_400_000;
 export const RETENTION_DAYS = 7;
 
 const calendar = new Intl.DateTimeFormat('en-CA', { timeZone: ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
+export const EDITION_TIME = '08:30';
 
 export function todayKey(now = Date.now()) {
   const parts = calendar.formatToParts(now);
@@ -17,6 +18,15 @@ export function isDateKey(value: unknown): value is string {
 
 export function shiftDate(key: string, days: number) {
   return new Date(Date.parse(`${key}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
+}
+
+export function editionReleaseAt(date: string) {
+  return Date.parse(`${date}T${EDITION_TIME}:00+08:00`);
+}
+
+export function editionDate(now: number) {
+  const today = todayKey(now);
+  return now < editionReleaseAt(today) ? shiftDate(today, -1) : today;
 }
 
 export function inRetention(date: string, today = todayKey()) {
