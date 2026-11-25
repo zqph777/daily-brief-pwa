@@ -30,14 +30,19 @@ jobs:
     timeout-minutes: 3
     permissions: {}
     steps:
+      - name: Create a short-lived private repository token
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ vars.MORNING_RELAY_APP_ID }}
+          private-key: ${{ secrets.MORNING_RELAY_APP_KEY }}
+          owner: zqph777
+          repositories: daily-brief
+          permission-actions: write
       - name: Trigger the private connectivity check
         env:
-          GH_TOKEN: ${{ secrets.BRIEF_ACTIONS_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo 'Add BRIEF_ACTIONS_TOKEN to this repository’s Actions secrets.' >&2
-            exit 1
-          fi
           gh api --silent -X POST 'repos/zqph777/daily-brief/actions/workflows/brief.yml/dispatches' \
             -f ref=main -f 'inputs[mode]=check_model'
 
@@ -61,22 +66,33 @@ jobs:
           fi
           if (( remaining > 0 )); then sleep "$remaining"; fi
 
-      - name: Queue the next day and wake the private workflow
+      - name: Queue the next day
         env:
-          RELAY_TOKEN: ${{ secrets.BRIEF_ACTIONS_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ -z "$RELAY_TOKEN" ]]; then
-            echo 'The environment requires BRIEF_ACTIONS_TOKEN.' >&2
-            exit 1
-          fi
           today=$(date +%F)
           if [[ "$REPORT_DATE" > "$today" ]]; then exit 1; fi
           tomorrow=$(date -d "$today + 1 day" +%F)
           gh api --silent -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/morning-relay.yml/dispatches" \
             -f ref=main -f "inputs[report_date]=$tomorrow"
+
+      - name: Create a short-lived private repository token
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ vars.MORNING_RELAY_APP_ID }}
+          private-key: ${{ secrets.MORNING_RELAY_APP_KEY }}
+          owner: zqph777
+          repositories: daily-brief
+          permission-actions: write
+
+      - name: Wake the private workflow for this edition
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          today=$(date +%F)
           if [[ "$REPORT_DATE" == "$today" && "$(date +%H%M)" < 2100 ]]; then
-            GH_TOKEN="$RELAY_TOKEN" gh api --silent -X POST \
+            gh api --silent -X POST \
               'repos/zqph777/daily-brief/actions/workflows/brief.yml/dispatches' \
               -f ref=main -f 'inputs[mode]=morning' -f "inputs[report_date]=$REPORT_DATE"
           fi
