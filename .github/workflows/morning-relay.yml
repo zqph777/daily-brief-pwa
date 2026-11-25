@@ -1,0 +1,61 @@
+name: Wake the morning brief
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_date:
+        description: 'Edition date in China Standard Time (YYYY-MM-DD)'
+        type: string
+        required: true
+      bootstrap:
+        description: 'Use the first-run wait timer'
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+
+concurrency:
+  group: morning-relay-${{ inputs.report_date }}
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    if: github.repository == 'zqph777/daily-brief-pwa' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.bootstrap && 'morning-relay-bootstrap' || 'morning-relay' }}
+    timeout-minutes: 150
+    env:
+      TZ: Asia/Shanghai
+      REPORT_DATE: ${{ inputs.report_date }}
+    steps:
+      - name: Wait until 08:00 Shanghai time
+        run: |
+          [[ "$REPORT_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+          release=$(date -d "$REPORT_DATE 08:00:00" +%s)
+          remaining=$((release - $(date +%s)))
+          if (( remaining > 8400 )); then
+            echo 'Runner started over 140 minutes early; check the environment timer.' >&2
+            exit 1
+          fi
+          if (( remaining > 0 )); then sleep "$remaining"; fi
+
+      - name: Queue the next day and wake the private workflow
+        env:
+          RELAY_TOKEN: ${{ secrets.BRIEF_ACTIONS_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -z "$RELAY_TOKEN" ]]; then
+            echo 'The environment requires BRIEF_ACTIONS_TOKEN.' >&2
+            exit 1
+          fi
+          today=$(date +%F)
+          if [[ "$REPORT_DATE" > "$today" ]]; then exit 1; fi
+          tomorrow=$(date -d "$today + 1 day" +%F)
+          gh api --silent -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/morning-relay.yml/dispatches" \
+            -f ref=main -f "inputs[report_date]=$tomorrow"
+          if [[ "$REPORT_DATE" == "$today" && "$(date +%H%M)" < 2100 ]]; then
+            GH_TOKEN="$RELAY_TOKEN" gh api --silent -X POST \
+              'repos/zqph777/daily-brief/actions/workflows/brief.yml/dispatches' \
+              -f ref=main -f 'inputs[mode]=morning' -f "inputs[report_date]=$REPORT_DATE"
+          fi
