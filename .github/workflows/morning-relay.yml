@@ -11,17 +11,38 @@ on:
         description: 'Use the first-run wait timer'
         type: boolean
         default: false
+      check:
+        description: 'Test private workflow access immediately, with no release or push'
+        type: boolean
+        default: false
 
 permissions:
   actions: write
 
 concurrency:
-  group: morning-relay-${{ inputs.report_date }}
+  group: morning-relay-${{ inputs.check && 'check' || inputs.report_date }}
   cancel-in-progress: false
 
 jobs:
+  check:
+    if: inputs.check && github.repository == 'zqph777/daily-brief-pwa' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions: {}
+    steps:
+      - name: Trigger the private connectivity check
+        env:
+          GH_TOKEN: ${{ secrets.BRIEF_ACTIONS_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo 'Add BRIEF_ACTIONS_TOKEN to this repository’s Actions secrets.' >&2
+            exit 1
+          fi
+          gh api --silent -X POST 'repos/zqph777/daily-brief/actions/workflows/brief.yml/dispatches' \
+            -f ref=main -f 'inputs[mode]=check_model'
+
   wake:
-    if: github.repository == 'zqph777/daily-brief-pwa' && github.ref == 'refs/heads/main'
+    if: ${{ !inputs.check && github.repository == 'zqph777/daily-brief-pwa' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.bootstrap && 'morning-relay-bootstrap' || 'morning-relay' }}
     timeout-minutes: 150
